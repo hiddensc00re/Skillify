@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#193c34"><title>Skillify · Il lavoro che ti somiglia</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="/static/style.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <aside class="sidebar">
+    <a class="brand" href="/" aria-label="Skillify, pagina iniziale"><span class="brand-mark">s<span>↗</span></span>skillify<span class="brand-dot">.</span></a>
+    <div class="workspace-label">IL TUO PROSSIMO PASSO</div>
+    <nav aria-label="Navigazione principale">
+      <button class="nav-item active" data-view="discover"><span aria-hidden="true">✧</span> Scopri offerte</button>
+      <button class="nav-item" data-view="applications"><span aria-hidden="true">♡</span> Le candidature <small id="application-count">0</small></button>
+      <button class="nav-item" data-view="employer"><span aria-hidden="true">▤</span> Area aziende</button>
+    </nav>
+    <div class="sidebar-note"><span class="tiny-star">✳</span><strong>Meno ricerche.<br>Più possibilità.</strong><p>Un’offerta alla volta, verso quello che vuoi diventare.</p></div>
+    <div class="sidebar-bottom"><span class="demo-dot"></span> Demo · dati di esempio</div>
+  </aside>
+  <div class="main-shell">
+    <header class="topbar"><div class="breadcrumb">Il tuo spazio <span>/</span> <strong id="current-page">Scopri offerte</strong></div><button class="profile-button" id="profile-button"><span class="avatar" id="avatar">TU</span><span id="profile-label">Il tuo profilo</span><span aria-hidden="true">⌄</span></button></header>
+    <main>
+      <section id="discover-view" class="view">
+        <div class="page-heading"><div><div class="eyebrow">UN NUOVO INIZIO, A PORTATA DI SWIPE</div><h1>Il lavoro che <em>ti somiglia.</em></h1><p>Esplora, scegli, fai il primo passo. Il prossimo potrebbe essere quello giusto.</p></div><span class="heading-symbol" aria-hidden="true">✳</span></div>
+        <div class="discovery-layout">
+          <div class="deck-column">
+            <div class="filter-bar"><label class="search-box"><span aria-hidden="true">⌕</span><input type="search" id="search" placeholder="Ruolo, azienda o competenza" aria-label="Cerca offerte"></label><select id="mode-filter" aria-label="Modalità di lavoro"><option value="">Tutte le modalità</option><option>Remoto</option><option>Ibrido</option><option>In sede</option></select></div>
+            <div class="category-bar" role="group" aria-label="Categoria"><button class="chip selected" data-category="">Tutte</button><button class="chip" data-category="Engineering">Tech</button><button class="chip" data-category="Design">Design</button><button class="chip" data-category="Data">Data</button><button class="chip" data-category="Marketing">Marketing</button><button class="chip" data-category="Business">Business</button></div>
+            <div class="deck-heading"><span><span class="live-dot"></span> <strong id="available-count">—</strong> offerte per te</span><button class="text-button" id="refresh-button">↻ Aggiorna</button></div>
+            <div class="card-area" id="card-area" aria-live="polite"><div class="loading">Caricamento delle offerte…</div></div>
+            <div class="swipe-controls" id="swipe-controls"><button class="swipe-button skip" id="skip-button" aria-label="Salta offerta"><span aria-hidden="true">×</span><small>Passo</small></button><div class="swipe-caption">Segui il tuo istinto.<span>← passa · candidati →</span></div><button class="swipe-button apply" id="apply-button" aria-label="Candidati all’offerta"><span aria-hidden="true">♡</span><small>Mi interessa</small></button></div>
+            <p class="keyboard-hint">Trascina la scheda, usa i pulsanti o le frecce della tastiera.</p>
+          </div>
+          <aside class="insights">
+            <div class="how-card"><div class="mini-label">PICCOLI GESTI, NUOVE STRADE</div><h2>Il tuo prossimo lavoro<br>inizia da qui.</h2><div class="how-step"><span>01</span><div><strong>Trova la tua direzione</strong><p>Filtra le offerte in base a ciò che cerchi.</p></div></div><div class="how-step"><span>02</span><div><strong>Fai swipe a destra</strong><p>Ti piace? Il tuo profilo diventa una candidatura.</p></div></div><div class="how-step"><span>03</span><div><strong>Lascia spazio al match</strong><p>L’offerta si sospende per <span class="pause-duration">15 minuti</span> quando riceve un candidato.</p></div></div><div class="how-footer">La scelta è tua. Il primo passo, anche. ↗</div></div>
+            <div class="profile-prompt"><span aria-hidden="true">↗</span><h3>Presentati al meglio.</h3><p>Nome, email e competenze: rendi il tuo primo contatto più personale.</p><button class="text-button" id="edit-profile">Completa il profilo →</button></div>
+            <div class="local-note"><span aria-hidden="true">ⓘ</span><p>Le candidature restano in questa app. Questa demo non invia email alle aziende.</p></div>
+          </aside>
+        </div>
+      </section>
+      <section id="applications-view" class="view" hidden><div class="page-heading"><div><div class="eyebrow">I PASSI CHE HAI FATTO</div><h1>Le tue <em>candidature.</em></h1><p>Tutte le opportunità che hai scelto, raccolte in un posto.</p></div></div><div id="applications-list" class="list-stack"></div></section>
+      <section id="employer-view" class="view" hidden><div class="page-heading"><div><div class="eyebrow">UNO SPAZIO PER CHI CERCA TALENTI</div><h1>Incontra il tuo <em>prossimo team.</em></h1><p>Pubblica un’offerta e gestisci le candidature ricevute.</p></div><div class="row-actions"><button class="text-button" id="admin-logout" hidden>Esci</button><button class="primary-button" id="new-job">+ Nuova offerta</button></div></div><div class="demo-banner" id="employer-note">Pannello demo locale: accessibile a chi usa questo computer. Non include account aziendali o autenticazione.</div><div class="dashboard-stats" id="dashboard-stats"></div><div id="employer-list" class="list-stack"></div></section>
+      <footer>skillify<span>Una nuova possibilità, un piccolo passo alla volta.</span><span>Skillify · demo</span></footer>
+    </main>
+  </div>
+  <dialog id="profile-dialog"><form id="profile-form"><div class="dialog-heading"><div><div class="eyebrow">PIACERE DI CONOSCERTI</div><h2>Il tuo profilo</h2></div><button type="button" class="close-button" data-close="profile-dialog" aria-label="Chiudi">×</button></div><p>Questi dati saranno visibili nel pannello aziende quando ti candidi.</p><label>Nome e cognome<input name="name" required maxlength="100" autocomplete="name" placeholder="Es. Giulia Rossi"></label><label>Email<input name="email" type="email" required maxlength="254" autocomplete="email" placeholder="nome@esempio.it"></label><label>Le tue competenze <small>(facoltativo)</small><input name="skills" maxlength="300" placeholder="Es. Python, design, comunicazione"></label><p class="form-error" id="profile-error" role="alert"></p><button class="primary-button full-width" type="submit">Salva profilo</button><small class="dialog-footnote">Il profilo è associato al browser per 30 giorni. Un altro browser o una finestra privata crea un candidato distinto.</small></form></dialog>
+  <dialog id="job-dialog"><form id="job-form"><div class="dialog-heading"><div><div class="eyebrow">APRI UNA NUOVA POSSIBILITÀ</div><h2>Pubblica un’offerta</h2></div><button type="button" class="close-button" data-close="job-dialog" aria-label="Chiudi">×</button></div><div class="form-grid"><label>Ruolo<input name="title" required maxlength="100" placeholder="Frontend Developer"></label><label>Azienda<input name="company" required maxlength="100" placeholder="La tua azienda"></label><label>Località<input name="location" required maxlength="100" placeholder="Milano"></label><label>Modalità<select name="mode"><option>Ibrido</option><option>Remoto</option><option>In sede</option></select></label><label>Categoria<select name="category"><option>Engineering</option><option>Design</option><option>Data</option><option>Marketing</option><option>Business</option></select></label><label>Contratto<input name="contract" required maxlength="100" placeholder="Tempo indeterminato"></label></div><label>Retribuzione<input name="salary" required maxlength="100" placeholder="€ 30.000 – 40.000 / anno"></label><label>Competenze, separate da virgole<input name="tags" maxlength="300" placeholder="Python, SQL, API"></label><label>Descrizione<textarea name="description" rows="4" required maxlength="3000" placeholder="Racconta il ruolo e il team…"></textarea></label><p class="form-error" id="job-error" role="alert"></p><button class="primary-button full-width" type="submit">Pubblica offerta</button></form></dialog>
+  <dialog id="admin-dialog"><form id="admin-form"><div class="dialog-heading"><div><div class="eyebrow">AREA AZIENDE</div><h2>Accedi al tuo spazio</h2></div><button type="button" class="close-button" data-close="admin-dialog" aria-label="Chiudi">×</button></div><p>Inserisci la password dell’area aziende per pubblicare offerte e consultare i candidati.</p><label>Password<input name="password" type="password" required maxlength="500" autocomplete="current-password"></label><p class="form-error" id="admin-error" role="alert"></p><button class="primary-button full-width" type="submit">Accedi</button></form></dialog>
+  <div id="toast" class="toast" role="status" hidden></div>
+</body>
+</html>
