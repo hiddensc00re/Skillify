@@ -1,4 +1,4 @@
-"""SQLite persistence and atomic job reservations for the local Skillify demo."""
+"""Shared persistence: SQLite locally and PostgreSQL on Vercel."""
 import json
 import re
 import secrets
@@ -39,12 +39,19 @@ def field(data, key, maximum, required=True):
 
 
 class Store:
-    def __init__(self, path, pause_seconds=900, clock=time.time, seed=True):
+    def __init__(self, path=None, pause_seconds=900, clock=time.time, seed=True, database_url=None):
         self.path = str(path)
+        self.database_url = database_url
         self.pause_seconds = pause_seconds
         self.clock = clock
-        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        if not database_url:
+            if path is None:
+                raise ValueError("Specifica un database SQLite locale o DATABASE_URL.")
+            Path(path).parent.mkdir(parents=True, exist_ok=True)
         with self.connect() as db:
+            if database_url:
+                # Coordinate schema creation and initial seed across cold starts.
+                db.execute("SELECT pg_advisory_xact_lock(78202026)")
             db.executescript("""
                 PRAGMA journal_mode=WAL;
                 CREATE TABLE IF NOT EXISTS candidates (
@@ -83,6 +90,15 @@ class Store:
 
     @contextmanager
     def connect(self):
+        if self.database_url:
+            import psycopg
+            from psycopg.rows import dict_row
+            from postgres import Connection
+            with psycopg.connect(self.database_url, row_factory=dict_row, connect_timeout=8) as connection:
+                connection.execute("SET LOCAL statement_timeout = '10s'")
+                connection.execute("SET LOCAL lock_timeout = '10s'")
+                yield Connection(connection)
+            return
         db = sqlite3.connect(self.path, timeout=10)
         db.row_factory = sqlite3.Row
         db.execute("PRAGMA foreign_keys=ON")
@@ -135,12 +151,14 @@ class Store:
     def apply(self, candidate_id, job_id):
         now = self.clock()
         with self.connect() as db:
-            # The write lock serializes competing candidates across server threads/processes.
-            db.execute("BEGIN IMMEDIATE")
+            # SQLite takes a write lock; PostgreSQL serializes on the selected job row.
+            if not self.database_url:
+                db.execute("BEGIN IMMEDIATE")
             profile = db.execute("SELECT * FROM candidates WHERE id=?", (candidate_id,)).fetchone()
             if not profile["name"] or not profile["email"]:
                 raise AppError("Completa il profilo prima di candidarti.")
-            job = db.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
+            job = db.execute("SELECT * FROM jobs WHERE id=?" + (" FOR UPDATE" if self.database_url else ""), (job_id,)).fetchone()
+            now = self.clock()
             if not job:
                 raise AppError("Offerta non trovata.", 404)
             if db.execute("SELECT 1 FROM applications WHERE candidate_id=? AND job_id=?", (candidate_id, job_id)).fetchone():
