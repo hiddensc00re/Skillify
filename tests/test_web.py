@@ -25,19 +25,27 @@ class WebTests(unittest.TestCase):
     def login(self):
         return self.post("/api/admin/login", {"password": self.password})
 
+    def register_candidate(self):
+        response = self.post('/api/auth/register', dict(name='Web QA',email='web@example.test',password='qa-password-123456',role='candidate'))
+        self.assertEqual(200,response.status_code)
+        self.csrf=response.json['csrf']
+
     def test_candidate_flow_and_private_dashboard(self):
-        self.assertEqual(401, self.client.get("/api/dashboard").status_code)
-        self.assertEqual(200, self.post("/api/profile", {"name": "Web QA", "email": "web@example.test"}).status_code)
-        jid = self.client.get("/api/jobs").json["jobs"][0]["id"]
-        self.assertEqual(200, self.post(f"/api/jobs/{jid}/apply", {}).status_code)
-        self.assertEqual(409, self.post(f"/api/jobs/{jid}/apply", {}).status_code)
-        self.assertEqual(jid, self.client.get("/api/applications").json["applications"][0]["id"])
-        other = self.app.test_client()
-        self.assertNotIn(jid, [j["id"] for j in other.get("/api/jobs").json["jobs"]])
-        self.assertEqual(200, self.login().status_code)
-        self.assertEqual(200, self.client.get("/api/dashboard").status_code)
-        self.assertEqual(200, self.post(f"/api/jobs/{jid}/state", {"action": "reopen"}).status_code)
-        self.assertIn(jid, [j["id"] for j in other.get("/api/jobs").json["jobs"]])
+        self.assertEqual(401,self.client.get('/api/applications').status_code)
+        self.assertEqual(401,self.post('/api/jobs/1/apply',{}).status_code)
+        self.register_candidate()
+        jid=self.client.get('/api/jobs').json['jobs'][0]['id']
+        response=self.post(f'/api/jobs/{jid}/apply',{})
+        self.assertEqual(200,response.status_code)
+        rid=response.json['id']
+        self.assertEqual(409,self.post(f'/api/jobs/{jid}/apply',{}).status_code)
+        self.assertEqual('reserved',self.client.get('/api/applications').json['applications'][0]['status'])
+        other=self.app.test_client()
+        self.assertNotIn(jid,[j['id'] for j in other.get('/api/jobs').json['jobs']])
+        self.assertEqual(200,self.post(f'/api/reservations/{rid}/confirm',dict(motivation='Voglio svolgere questa prova per mostrare le mie competenze.',availability='Oggi',commitment=True)).status_code)
+        self.assertEqual(200,self.post(f'/api/reservations/{rid}/start',{}).status_code)
+        self.assertEqual(200,self.post(f'/api/reservations/{rid}/submit',{'response':'Una soluzione ragionata sufficientemente lunga per la consegna.'}).status_code)
+        self.assertEqual(401,self.client.get('/api/dashboard').status_code)
 
     def test_admin_login_logout_and_cookie_bound_to_session(self):
         self.assertEqual(401, self.post("/api/admin/login", {"password": "wrong"}).status_code)
@@ -64,8 +72,9 @@ class WebTests(unittest.TestCase):
     def test_csrf_origin_and_json_validation(self):
         self.assertEqual(403, self.client.post("/api/profile", json={}).status_code)
         self.assertEqual(403, self.post("/api/profile", {}, origin="https://foreign.test").status_code)
+        self.register_candidate()
         self.assertEqual(400, self.post("/api/profile", []).status_code)
-        self.assertEqual(413, self.post("/api/profile", {"name": "x" * 21000}).status_code)
+        self.assertEqual(413, self.post("/api/profile", {"name": "x" * 110000}).status_code)
         self.assertEqual(404, self.post("/api/jobs/99999999999999999999999/apply", {}).status_code)
 
     def test_static_assets_and_hidden_source(self):
