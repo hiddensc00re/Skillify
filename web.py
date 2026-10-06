@@ -3,11 +3,13 @@ import os
 import secrets
 import sqlite3
 import threading
+import hashlib
+import io
 from pathlib import Path
 from urllib.parse import urlsplit
 
 import psycopg
-from flask import Flask, g, jsonify, request, send_from_directory
+from flask import Flask, g, jsonify, request, send_from_directory, send_file
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from werkzeug.exceptions import HTTPException
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -28,7 +30,7 @@ def create_app(config=None, store=None):
         SQLITE_PATH=ROOT / "data" / "skillify.db",
         PAUSE_SECONDS=int(os.environ.get("PAUSE_SECONDS", "900")),
         SEED_DEMO_JOBS=os.environ.get("SEED_DEMO_JOBS", "1") == "1",
-        MAX_CONTENT_LENGTH=20000,
+        MAX_CONTENT_LENGTH=2 * 1024 * 1024 + 65536,
     )
     app.config.update(config or {})
     if app.config["CLOUD"]:
@@ -64,7 +66,7 @@ def create_app(config=None, store=None):
     def is_admin():
         password = app.config["ADMIN_PASSWORD"]
         if not password:
-            return not app.config["CLOUD"]
+            return False
         try:
             signed = URLSafeTimedSerializer(password, salt="skillify-employer-v1").loads(
                 request.cookies.get("skillify_admin", ""), max_age=3600)
@@ -73,8 +75,18 @@ def create_app(config=None, store=None):
             return False
 
     def require_admin():
-        if not is_admin():
+        if not is_admin() and not (g.account and g.account['role'] == 'employer'):
             raise AppError("Accedi all’area aziende per continuare.", 401)
+
+    def candidate():
+        if not g.account or g.account['role'] != 'candidate':
+            raise AppError('Accedi come candidato per continuare.', 401)
+        return g.account['candidate_id']
+
+    def employer():
+        require_admin()
+        return {'owner_id':g.account['id'] if g.account and g.account['role']=='employer' else None,
+                'legacy':is_admin() and not g.account}
 
     def body():
         if not request.is_json:
@@ -92,7 +104,10 @@ def create_app(config=None, store=None):
         if request.path == "/api/health":
             return
         g.session, g.new_session = g.store.session(request.cookies.get("skillify_session"))
+        g.account = g.store.account(g.session.get('account_id'))
         if request.method == "POST":
+            if not request.path.endswith('/files') and (request.content_length or 0) > 100000:
+                raise AppError('Richiesta troppo grande.',413)
             origin = request.headers.get("Origin")
             if (origin is not None and origin != request.host_url.rstrip("/")) or not secrets.compare_digest(
                 request.headers.get("X-CSRF-Token", ""), g.session["csrf"]):
@@ -148,24 +163,24 @@ def create_app(config=None, store=None):
     def bootstrap():
         return jsonify(profile=g.store.profile(g.session["candidate_id"]), csrf=g.session["csrf"],
                        pause_seconds=g.store.pause_seconds, is_cloud=app.config["CLOUD"],
-                       admin_required=bool(app.config["ADMIN_PASSWORD"]), admin_authenticated=is_admin())
+                       admin_required=bool(app.config["ADMIN_PASSWORD"]), admin_authenticated=is_admin(), account=g.account,
+                       version='0.3.0')
 
     @app.get("/api/jobs")
     def jobs():
-        return jsonify(jobs=g.store.jobs(g.session["candidate_id"]))
+        return jsonify(jobs=g.store.feed(g.session["candidate_id"]))
 
     @app.get("/api/applications")
     def applications():
-        return jsonify(applications=g.store.applications(g.session["candidate_id"]))
+        return jsonify(applications=g.store.candidate_reservations(candidate()))
 
     @app.get("/api/dashboard")
     def dashboard():
-        require_admin()
-        return jsonify(jobs=g.store.dashboard())
+        return jsonify(jobs=g.store.employer_jobs(**employer()))
 
     @app.post("/api/profile")
     def profile():
-        return jsonify(profile=g.store.save_profile(g.session["candidate_id"], body()))
+        return jsonify(profile=g.store.save_profile(candidate(), body()))
 
     @app.post("/api/passes/reset")
     def reset_passes():
@@ -175,8 +190,8 @@ def create_app(config=None, store=None):
 
     @app.post("/api/jobs")
     def create_job():
-        require_admin()
-        return jsonify(id=g.store.create_job(body()), message="Offerta pubblicata.")
+        auth=employer()
+        return jsonify(id=g.store.create_job(body(),owner_id=auth['owner_id']), message="Offerta pubblicata.")
 
     @app.post("/api/jobs/<int:job_id>/<action>")
     def job_action(job_id, action):
@@ -184,19 +199,72 @@ def create_app(config=None, store=None):
             raise AppError("Offerta non trovata.", 404)
         data = body()
         if action == "apply":
-            return jsonify(g.store.apply(g.session["candidate_id"], job_id))
+            return jsonify(g.store.reserve(candidate(), job_id))
         if action == "pass":
             g.store.pass_job(g.session["candidate_id"], job_id)
             return jsonify(message="Offerta saltata.")
         if action == "state":
-            require_admin()
-            g.store.set_state(job_id, data.get("action"))
-            return jsonify(message="Stato dell’offerta aggiornato.")
+            return jsonify(g.store.employer_state(job_id,data.get('action'),note=field_note(data),**employer()))
         raise AppError("Risorsa non trovata.", 404)
+
+    def field_note(data):
+        from store import field
+        return field(data,'note',2000,False)
+
+    def auth_response(account=None):
+        g.session=g.store.switch_account(g.session['token'],account)
+        g.new_session=True
+        response=jsonify(account=account,csrf=g.session['csrf'],message='Accesso aggiornato.')
+        response.delete_cookie('skillify_admin',secure=app.config['CLOUD'],httponly=True,samesite='Strict')
+        return response
+
+    @app.post('/api/auth/register')
+    def register():
+        return auth_response(g.store.register(body()))
+
+    @app.post('/api/auth/login')
+    def login():
+        data=body()
+        key=hashlib.sha256((str(data.get('email','')).lower()+':'+str(data.get('role',''))).encode()).hexdigest()
+        return auth_response(g.store.authenticate(data,key))
+
+    @app.post('/api/auth/logout')
+    def logout():
+        body()
+        return auth_response()
+
+    @app.post('/api/reservations/<int:rid>/<action>')
+    def reservation_action(rid,action):
+        return jsonify(g.store.reservation_action(candidate(),rid,action,body()))
+
+    @app.post('/api/jobs/<int:job_id>/files')
+    def job_files(job_id):
+        auth=employer()
+        upload=request.files.get('file')
+        if not upload:raise AppError('Seleziona un file.')
+        return jsonify(g.store.add_attachment(job_id,None,upload.filename,upload.read(2*1024*1024+1),**auth))
+
+    @app.post('/api/reservations/<int:rid>/files')
+    def candidate_files(rid):
+        cid=candidate()
+        rows=g.store.candidate_reservations(cid)
+        r=next((x for x in rows if x['id']==rid),None)
+        if not r:raise AppError('Candidatura non trovata.',404)
+        upload=request.files.get('file')
+        if not upload:raise AppError('Seleziona un file.')
+        return jsonify(g.store.add_attachment(r['job_id'],rid,upload.filename,upload.read(2*1024*1024+1),candidate_id=cid))
+
+    @app.get('/api/files/<int:fid>')
+    def download_file(fid):
+        auth={'owner_id':g.account['id'] if g.account and g.account['role']=='employer' else None,'legacy':is_admin() and not g.account}
+        f=g.store.attachment(fid,candidate_id=g.account['candidate_id'] if g.account and g.account['role']=='candidate' else None,**auth)
+        return send_file(io.BytesIO(bytes(f['content'])),mimetype='application/octet-stream',as_attachment=True,download_name=f['name'])
 
     @app.post("/api/admin/login")
     def admin_login():
         data = body()
+        if g.account:
+            raise AppError('Esci dal tuo account prima di accedere alla gestione demo.',409)
         password = app.config["ADMIN_PASSWORD"]
         given = data.get("password", "")
         if not password or not isinstance(given, str) or not secrets.compare_digest(given.encode(), password.encode()):

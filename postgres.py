@@ -37,7 +37,7 @@ class Connection:
 
     def execute(self, sql, parameters=None):
         sql = self.statement(sql, parameters)
-        returns_id = bool(re.match(r"\s*INSERT INTO (?:candidates|jobs)\b", sql))
+        returns_id = bool(re.match(r"\s*INSERT INTO (?:candidates|jobs|accounts|reservations|attachments)\b", sql))
         if returns_id:
             sql += " RETURNING id"
         cursor = self.connection.execute(sql, parameters)

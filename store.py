@@ -38,7 +38,10 @@ def field(data, key, maximum, required=True):
     return value
 
 
-class Store:
+from hiring import HiringMixin
+
+
+class Store(HiringMixin):
     def __init__(self, path=None, pause_seconds=900, clock=time.time, seed=True, database_url=None):
         self.path = str(path)
         self.database_url = database_url
@@ -87,6 +90,7 @@ class Store:
                     (title,company,location,mode,category,salary,tags,description,contract,initials,color,created_at)
                     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
                     [(*j[:6], json.dumps(j[6], ensure_ascii=False), *j[7:], self.clock()) for j in SEED_JOBS])
+            self.migrate_hiring(db)
 
     @contextmanager
     def connect(self):
@@ -117,8 +121,8 @@ class Store:
             db.execute("DELETE FROM sessions WHERE expires_at<=?", (now,))
             candidate_id = db.execute("INSERT INTO candidates DEFAULT VALUES").lastrowid
             session = dict(token=secrets.token_urlsafe(32), candidate_id=candidate_id,
-                           csrf=secrets.token_urlsafe(32), expires_at=now + 30 * 86400)
-            db.execute("INSERT INTO sessions VALUES (:token,:candidate_id,:csrf,:expires_at)", session)
+                           csrf=secrets.token_urlsafe(32), expires_at=now + 30 * 86400, account_id=None)
+            db.execute("INSERT INTO sessions (token,candidate_id,csrf,expires_at) VALUES (:token,:candidate_id,:csrf,:expires_at)", session)
             return session, True
 
     def profile(self, candidate_id):
@@ -195,7 +199,7 @@ class Store:
                     WHERE a.job_id=? ORDER BY a.created_at DESC""", (job["id"],))]
             return jobs
 
-    def create_job(self, data):
+    def create_job(self, data, owner_id=None):
         values = {k: field(data, k, limit) for k, limit in {
             "title": 100, "company": 100, "location": 100, "mode": 20, "category": 30,
             "salary": 100, "description": 3000, "contract": 100}.items()}
@@ -205,11 +209,12 @@ class Store:
             raise AppError("Categoria non valida.")
         tags = field(data, "tags", 300, False)
         values.update(tags=json.dumps([t.strip() for t in tags.split(",") if t.strip()][:8], ensure_ascii=False),
-                      initials=values["company"][:2].upper(), color="green", created_at=self.clock())
+                      initials=values["company"][:2].upper(), color="green", created_at=self.clock(), owner_id=owner_id,
+                      test_brief=field(data,"test_brief",10000,False) or "Descrivi come affronteresti il ruolo e presenta un esempio pratico del tuo lavoro.")
         with self.connect() as db:
             return db.execute("""INSERT INTO jobs
-                (title,company,location,mode,category,salary,description,contract,tags,initials,color,created_at)
-                VALUES (:title,:company,:location,:mode,:category,:salary,:description,:contract,:tags,:initials,:color,:created_at)""", values).lastrowid
+                (title,company,location,mode,category,salary,description,contract,tags,initials,color,created_at,owner_id,test_brief)
+                VALUES (:title,:company,:location,:mode,:category,:salary,:description,:contract,:tags,:initials,:color,:created_at,:owner_id,:test_brief)""", values).lastrowid
 
     def set_state(self, job_id, action):
         if action not in ("reopen", "close"):
